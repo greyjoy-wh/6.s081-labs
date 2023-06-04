@@ -61,7 +61,7 @@ kvminithart()
 // create any required page-table pages.
 //
 // The risc-v Sv39 scheme has three levels of page-table
-// pages. A page-table page contains 512 64-bit PTEs.
+// pages. A page-table page contains 512 64-bit PTEs.  一个PET大小是8个字节包括PPN以及一下标志位和一些
 // A 64-bit virtual address is split into five fields:
 //   39..63 -- must be zero.
 //   30..38 -- 9 bits of level-2 index.
@@ -69,23 +69,24 @@ kvminithart()
 //   12..20 -- 9 bits of level-0 index.
 //    0..11 -- 12 bits of byte offset within the page.
 pte_t *
-walk(pagetable_t pagetable, uint64 va, int alloc)
+walk(pagetable_t pagetable, uint64 va, int alloc) //alloc的作用？
 {
+  //这个函数里面操作的地址都是直接的物理地址
   if(va >= MAXVA)
     panic("walk");
 
   for(int level = 2; level > 0; level--) {
-    pte_t *pte = &pagetable[PX(level, va)];
+    pte_t *pte = &pagetable[PX(level, va)]; //根据第几级的level中的9个数直接对应到pte
     if(*pte & PTE_V) {
       pagetable = (pagetable_t)PTE2PA(*pte);
-    } else {
-      if(!alloc || (pagetable = (pde_t*)kalloc()) == 0)
+    } else {//如果无效的话
+      if(!alloc || (pagetable = (pde_t*)kalloc()) == 0) //创建4096个字节的地址 刚好是8 * 512
         return 0;
       memset(pagetable, 0, PGSIZE);
       *pte = PA2PTE(pagetable) | PTE_V;
     }
   }
-  return &pagetable[PX(0, va)];
+  return &pagetable[PX(0, va)]; //返回的是最后一级页表PTE地址
 }
 
 // Look up a virtual address, return the physical address,
@@ -100,7 +101,7 @@ walkaddr(pagetable_t pagetable, uint64 va)
   if(va >= MAXVA)
     return 0;
 
-  pte = walk(pagetable, va, 0);
+  pte = walk(pagetable, va, 0); //不能够构建
   if(pte == 0)
     return 0;
   if((*pte & PTE_V) == 0)

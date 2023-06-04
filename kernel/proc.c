@@ -130,6 +130,21 @@ found:
   return p;
 }
 
+//遍历进程表，计算出所有UNUSED的进程
+int
+count_unused_proc(void){
+  int count = 0;
+  struct proc* p;
+  for(p = proc; p < &proc[NPROC]; p++) {
+    acquire(&p->lock);
+    if(p->state != UNUSED) {
+      count++;
+    }
+    release(&p->lock); 
+  }
+  return count;
+}
+
 // free a proc structure and the data hanging from it,
 // including user pages.
 // p->lock must be held.
@@ -274,6 +289,8 @@ fork(void)
     return -1;
   }
   np->sz = p->sz;
+  //父进程中的保存的trance也复制到子进程中
+  np->target_syscall = p->target_syscall;
 
   np->parent = p;
 

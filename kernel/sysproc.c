@@ -6,6 +6,7 @@
 #include "memlayout.h"
 #include "spinlock.h"
 #include "proc.h"
+#include "sysinfo.h"
 
 uint64
 sys_exit(void)
@@ -95,3 +96,37 @@ sys_uptime(void)
   release(&tickslock);
   return xticks;
 }
+
+//sys_trace()
+uint64
+sys_trace(void)
+{
+  if(argint(0, &(myproc()->target_syscall)) < 0)
+    return -1;
+  return 0;
+}
+
+extern int count_free_memry(void);
+extern int count_unused_proc(void);
+
+uint64
+sys_sysinfo(void)
+{
+  //在内核中计算出空闲的内存空间以及进程的数量
+  //返回给用户态。
+  struct proc *p = myproc();
+  int free_page_count = count_free_memry();
+  int unused_proc_count = count_unused_proc();
+  uint64 des;
+  if(argaddr(0, &des) < 0)
+    return -1;
+  struct sysinfo info;
+  info.freemem = (uint64)free_page_count * 4096;
+  info.nproc = unused_proc_count;
+  if(copyout(p->pagetable, des, (char*)&info, sizeof(info)) < 0)
+    return -1;
+  return 0;
+}
+
+
+

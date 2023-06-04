@@ -80,3 +80,16 @@ kalloc(void)
     memset((char*)r, 5, PGSIZE); // fill with junk
   return (void*)r;
 }
+
+//根据 freelist来计算出所有的空闲的内存。
+int 
+count_free_memry(void)
+{ 
+  int count = 0;
+  struct run *r = kmem.freelist; //没有改变kmem.freelist的值不需要上锁
+  while(r){
+    r = r->next;
+    count++;
+  }
+  return count;
+}
