@@ -12,6 +12,7 @@ static int loadseg(pde_t *pgdir, uint64 addr, struct inode *ip, uint offset, uin
 int
 exec(char *path, char **argv)
 {
+
   char *s, *last;
   int i, off;
   uint64 argc, sz = 0, sp, ustack[MAXARG+1], stackbase;
@@ -75,6 +76,8 @@ exec(char *path, char **argv)
   sp = sz;
   stackbase = sp - PGSIZE;
 
+  uvmpagecopy(pagetable, p->kenerl_page_table, 0, sz);
+
   // Push argument strings, prepare rest of stack in ustack.
   for(argc = 0; argv[argc]; argc++) {
     if(argc >= MAXARG)
@@ -111,10 +114,14 @@ exec(char *path, char **argv)
   // Commit to the user image.
   oldpagetable = p->pagetable;
   p->pagetable = pagetable;
+  
   p->sz = sz;
   p->trapframe->epc = elf.entry;  // initial program counter = main
   p->trapframe->sp = sp; // initial stack pointer
   proc_freepagetable(oldpagetable, oldsz);
+
+  if(p->pid == 1)
+    vmprint(p->pagetable);
 
   return argc; // this ends up in a0, the first argument to main(argc, argv)
 
@@ -132,6 +139,7 @@ exec(char *path, char **argv)
 // va must be page-aligned
 // and the pages from va to va+sz must already be mapped.
 // Returns 0 on success, -1 on failure.
+//将对应的文件中的段复制到 给出的虚拟地址中。
 static int
 loadseg(pagetable_t pagetable, uint64 va, struct inode *ip, uint offset, uint sz)
 {

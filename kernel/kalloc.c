@@ -23,7 +23,7 @@ struct {
   struct run *freelist;
 } kmem;
 
-void
+void  
 kinit()
 {
   initlock(&kmem.lock, "kmem");
@@ -64,7 +64,8 @@ kfree(void *pa)
 
 // Allocate one 4096-byte page of physical memory.
 // Returns a pointer that the kernel can use.
-// Returns 0 if the memory cannot be allocated.
+// Returns 0 if the memory cannot be allocated.s
+//从空闲的物理内存中取出一块，并且返回地址。
 void *
 kalloc(void)
 {

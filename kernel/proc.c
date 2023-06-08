@@ -30,16 +30,16 @@ procinit(void)
   initlock(&pid_lock, "nextpid");
   for(p = proc; p < &proc[NPROC]; p++) {
       initlock(&p->lock, "proc");
-
       // Allocate a page for the process's kernel stack.
       // Map it high in memory, followed by an invalid
       // guard page.
-      char *pa = kalloc();
-      if(pa == 0)
-        panic("kalloc");
-      uint64 va = KSTACK((int) (p - proc));
-      kvmmap(va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
-      p->kstack = va;
+      // char *pa = kalloc();
+      // if(pa == 0)
+      //   panic("kalloc");
+      // //当有下一个进程的内核栈时，才会有当前内核栈的偏靠低地址的guard-page
+      // uint64 va = KSTACK((int) (p - proc)); //stack = 2 pagesize
+      // kvmmap(va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
+      // p->kstack = va;
   }
   kvminithart();
 }
@@ -121,6 +121,24 @@ found:
     return 0;
   }
 
+
+  p->kenerl_page_table = kvminit_for_everyproc();
+  if(p->kenerl_page_table == 0){
+    freeproc(p);
+    release(&p->lock);
+    return 0;
+  }
+    
+  char* pa = kalloc();
+  if(pa == 0)
+    panic("kalloc");
+  uint64 va = KSTACK((int)(p - proc));
+  // mappages(p->kenerl_page_table, va, PGSIZE, (uint64)pa, PTE_R | PTE_W);
+  ukvmmap(p->kenerl_page_table, va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
+  p->kstack = va;
+
+
+
   // Set up new context to start executing at forkret,
   // which returns to user space.
   memset(&p->context, 0, sizeof(p->context));
@@ -139,8 +157,23 @@ freeproc(struct proc *p)
   if(p->trapframe)
     kfree((void*)p->trapframe);
   p->trapframe = 0;
+
+  if(p->kstack){
+    pte_t* pte = walk(p->kenerl_page_table, p->kstack, 0);
+    if(pte == 0)
+      panic("freeproc:walk");
+    kfree((void*)PTE2PA(*pte));
+  }
+  p->kstack = 0;
+
   if(p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
+  if(p->kenerl_page_table)
+    only_freepage(p->kenerl_page_table);
+  p->kenerl_page_table = 0;
+  //释放内核栈对应的物理地址。
+
+
   p->pagetable = 0;
   p->sz = 0;
   p->pid = 0;
@@ -220,6 +253,7 @@ userinit(void)
   // and data into it.
   uvminit(p->pagetable, initcode, sizeof(initcode));
   p->sz = PGSIZE;
+  uvmpagecopy(p->pagetable, p->kenerl_page_table, 0, p->sz);
 
   // prepare for the very first "return" from kernel to user.
   p->trapframe->epc = 0;      // user program counter
@@ -242,10 +276,14 @@ growproc(int n)
   struct proc *p = myproc();
 
   sz = p->sz;
+
   if(n > 0){
+    if (PGROUNDUP(sz + n) >= PLIC)
+      return -1;
     if((sz = uvmalloc(p->pagetable, sz, sz + n)) == 0) {
       return -1;
     }
+    uvmpagecopy(p->pagetable, p->kenerl_page_table, sz-n, sz);
   } else if(n < 0){
     sz = uvmdealloc(p->pagetable, sz, sz + n);
   }
@@ -273,7 +311,9 @@ fork(void)
     release(&np->lock);
     return -1;
   }
+
   np->sz = p->sz;
+
 
   np->parent = p;
 
@@ -288,6 +328,8 @@ fork(void)
     if(p->ofile[i])
       np->ofile[i] = filedup(p->ofile[i]);
   np->cwd = idup(p->cwd);
+
+  uvmpagecopy(np->pagetable, np->kenerl_page_table, 0, p->sz);
 
   safestrcpy(np->name, p->name, sizeof(p->name));
 
@@ -471,8 +513,13 @@ scheduler(void)
         // Switch to chosen process.  It is the process's job
         // to release its lock and then reacquire it
         // before jumping back to us.
+
         p->state = RUNNING;
         c->proc = p;
+
+        w_satp(MAKE_SATP(p->kenerl_page_table));
+        sfence_vma();
+
         swtch(&c->context, &p->context);
 
         // Process is done running for now.
@@ -485,6 +532,7 @@ scheduler(void)
     }
 #if !defined (LAB_FS)
     if(found == 0) {
+      kvminithart();//当没有进程时内核用全局的
       intr_on();
       asm volatile("wfi");
     }
