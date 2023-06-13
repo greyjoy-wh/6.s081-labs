@@ -104,6 +104,8 @@ extern uint64 sys_unlink(void);
 extern uint64 sys_wait(void);
 extern uint64 sys_write(void);
 extern uint64 sys_uptime(void);
+extern uint64 sys_sigalarm(void);
+extern uint64 sys_sigreturn(void);
 
 static uint64 (*syscalls[])(void) = {
 [SYS_fork]    sys_fork,
@@ -127,6 +129,8 @@ static uint64 (*syscalls[])(void) = {
 [SYS_link]    sys_link,
 [SYS_mkdir]   sys_mkdir,
 [SYS_close]   sys_close,
+[SYS_sigalarm] sys_sigalarm,
+[SYS_sigreturn] sys_sigreturn,
 };
 
 void
@@ -143,4 +147,29 @@ syscall(void)
             p->pid, p->name, num);
     p->trapframe->a0 = -1;
   }
+}
+
+
+
+uint64 
+sys_sigalarm(){
+  //获得传入的参数
+  struct proc *p = myproc();
+  argint(0, &(p->num_tick));
+  uint64 addr;
+  argaddr(1, &addr);
+  //要讲用户的虚拟地址换成 物理地址
+  p->handler = addr;
+  p->passed_trick = 0;
+  return 0;
+}
+
+
+uint64 
+sys_sigreturn(){
+  struct proc * p = myproc();
+  p->passed_trick = 0;
+  *(p->trapframe) = *(p->back_frame);
+  p->handler_exe = 0;
+  return 0;
 }

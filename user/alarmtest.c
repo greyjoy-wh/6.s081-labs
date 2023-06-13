@@ -23,6 +23,7 @@ main(int argc, char *argv[])
 {
   test0();
   test1();
+  printf("aaa\n");
   test2();
   exit(0);
 }

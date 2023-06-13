@@ -53,7 +53,7 @@ void
 kvminithart()
 {
   w_satp(MAKE_SATP(kernel_pagetable));
-  sfence_vma();
+  sfence_vma(); //清空tlb 
 }
 
 // Return the address of the PTE in page table pagetable

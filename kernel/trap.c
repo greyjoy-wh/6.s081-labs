@@ -43,12 +43,15 @@ usertrap(void)
 
   // send interrupts and exceptions to kerneltrap(),
   // since we're now in the kernel.
-  w_stvec((uint64)kernelvec);
+  w_stvec((uint64)kernelvec); //设施stvec为内核的trampoline地址
+                              //在内核中执行中断/系统调用 执行的代码跟用户不一样
+                              //而stvec就是储存要跳转的地址。
 
-  struct proc *p = myproc();
+  struct proc *p = myproc();//获取当前的进程
   
   // save user program counter.
-  p->trapframe->epc = r_sepc();
+  p->trapframe->epc = r_sepc(); //保存之前用户的pc指针，这里也可以在trampoline中实现
+                                //不能在寄存器中保存这个值
   
   if(r_scause() == 8){
     // system call
@@ -58,13 +61,13 @@ usertrap(void)
 
     // sepc points to the ecall instruction,
     // but we want to return to the next instruction.
-    p->trapframe->epc += 4;
+    p->trapframe->epc += 4;   //将pc指针加+，当返回的时候指向的是下一行而不是ecall
 
     // an interrupt will change sstatus &c registers,
     // so don't enable until done with those registers.
-    intr_on();
+    intr_on();                //打开内核中断
 
-    syscall();
+    syscall();                //执行syscall，根据a7中保存的内容来执行对于的调用
   } else if((which_dev = devintr()) != 0){
     // ok
   } else {
@@ -77,10 +80,23 @@ usertrap(void)
     exit(-1);
 
   // give up the CPU if this is a timer interrupt.
-  if(which_dev == 2)
-    yield();
+  if(which_dev == 2 && p->handler_exe == 0){
+    //是时间中断停止导致的trap
 
-  usertrapret();
+    p->passed_trick++;
+    if(p->passed_trick == p->num_tick){
+      //直接修改保存的寄存器会将该函数保存的要返回的寄存器的值覆盖掉。
+      //
+      //将当前的trapframe保存在另外一个页面中，
+      *(p->back_frame) = *(p->trapframe);
+      p->trapframe->epc = p->handler;
+      p->passed_trick = 0;
+      p->handler_exe = 1;
+    }
+    yield();
+  }
+
+  usertrapret();            //执行返回用户态要做的准备
 }
 
 //
@@ -94,10 +110,11 @@ usertrapret(void)
   // we're about to switch the destination of traps from
   // kerneltrap() to usertrap(), so turn off interrupts until
   // we're back in user space, where usertrap() is correct.
-  intr_off();
+  intr_off(); //关闭中断，因为我们这里要重新将stvec设置为用户区的trampoline
+              //所以不允许此时有内核中中断。
 
   // send syscalls, interrupts, and exceptions to trampoline.S
-  w_stvec(TRAMPOLINE + (uservec - trampoline));
+  w_stvec(TRAMPOLINE + (uservec - trampoline)); //设置的是要返回的地址
 
   // set up trapframe values that uservec will need when
   // the process next re-enters the kernel.
@@ -116,7 +133,7 @@ usertrapret(void)
   w_sstatus(x);
 
   // set S Exception Program Counter to the saved user pc.
-  w_sepc(p->trapframe->epc);
+  w_sepc(p->trapframe->epc);  //将保存的pc指针重新赋值给sepc
 
   // tell trampoline.S the user page table to switch to.
   uint64 satp = MAKE_SATP(p->pagetable);
@@ -125,7 +142,9 @@ usertrapret(void)
   // switches to the user page table, restores user registers,
   // and switches to user mode with sret.
   uint64 fn = TRAMPOLINE + (userret - trampoline);
-  ((void (*)(uint64,uint64))fn)(TRAPFRAME, satp);
+  //uint64作为一个函数指针地址，然后传入数据执行，此时fn就是指向调用usertrap后的地址
+  //也就是重新回到trampoline中。此时参数a0保存的是trapframe，a1保存的是用户页表
+  ((void (*)(uint64,uint64))fn)(TRAPFRAME, satp);//此时a0 保存的是traframe的地址
 }
 
 // interrupts and exceptions from kernel code go here via kernelvec,

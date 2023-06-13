@@ -113,8 +113,17 @@ found:
     return 0;
   }
 
+  //创建backframe
+  if((p->back_frame = (struct trapframe*)kalloc()) == 0){
+    release(&p->lock);
+    return 0;
+  }
+
   // An empty user page table.
   p->pagetable = proc_pagetable(p);
+  p->passed_trick = 0;
+  p->num_tick = 0;
+  p->handler_exe = 0;
   if(p->pagetable == 0){
     freeproc(p);
     release(&p->lock);
@@ -139,6 +148,9 @@ freeproc(struct proc *p)
   if(p->trapframe)
     kfree((void*)p->trapframe);
   p->trapframe = 0;
+  if(p->back_frame)
+    kfree((void*)p->back_frame);
+  p->back_frame = 0;
   if(p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
   p->pagetable = 0;
@@ -173,7 +185,8 @@ proc_pagetable(struct proc *p)
     uvmfree(pagetable, 0);
     return 0;
   }
-
+  //将用户去的虚拟地址的trapframe段映射到p->trapframe页中，
+  //这样修改p->trapframe就是修改用户的栈区的内容。
   // map the trapframe just below TRAMPOLINE, for trampoline.S.
   if(mappages(pagetable, TRAPFRAME, PGSIZE,
               (uint64)(p->trapframe), PTE_R | PTE_W) < 0){
