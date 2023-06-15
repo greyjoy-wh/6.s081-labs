@@ -474,6 +474,8 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
     pa0 = walkaddr(pagetable, va0);
     if(pa0 == 0)
       return -1;
+    //因为对于用户空间虚拟内存的每一页都需要进行walkaddr，所以不能直接一次性
+    //复制完，要一页一页的复制。
     n = PGSIZE - (dstva - va0);
     if(n > len)
       n = len;

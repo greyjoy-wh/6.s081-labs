@@ -21,7 +21,7 @@ exec(char *path, char **argv)
   struct proghdr ph;
   pagetable_t pagetable = 0, oldpagetable;
   struct proc *p = myproc();
-
+  //开启文件系统的日志功能
   begin_op();
 
   if((ip = namei(path)) == 0){

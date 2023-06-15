@@ -29,7 +29,7 @@ procinit(void)
   
   initlock(&pid_lock, "nextpid");
   for(p = proc; p < &proc[NPROC]; p++) {
-      initlock(&p->lock, "proc");
+      initlock(&p->lock, "proc");                   
       // Allocate a page for the process's kernel stack.
       // Map it high in memory, followed by an invalid
       // guard page.
@@ -37,6 +37,7 @@ procinit(void)
       // if(pa == 0)
       //   panic("kalloc");
       // //当有下一个进程的内核栈时，才会有当前内核栈的偏靠低地址的guard-page
+      // //内核栈在tampoline的下面
       // uint64 va = KSTACK((int) (p - proc)); //stack = 2 pagesize
       // kvmmap(va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
       // p->kstack = va;
