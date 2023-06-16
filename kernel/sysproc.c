@@ -43,12 +43,20 @@ sys_sbrk(void)
 {
   int addr;
   int n;
-
+  
   if(argint(0, &n) < 0)
     return -1;
   addr = myproc()->sz;
-  if(growproc(n) < 0)
-    return -1;
+
+  if(addr + n > TRAPFRAME || addr + n < 0)
+    return addr;
+  myproc()->sz = addr +  n; 
+  if(n < 0){
+    uvmdealloc(myproc()->pagetable, addr, addr+n);
+  }
+
+  // if(growproc(n) < 0)
+  //   return -1;
   return addr;
 }
 
