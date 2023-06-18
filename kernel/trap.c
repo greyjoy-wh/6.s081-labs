@@ -67,24 +67,26 @@ usertrap(void)
     syscall();
   } else if((which_dev = devintr()) != 0){
     // ok
-  } else if(r_scause() == 15 || r_scause() == 13){
-      uint64 va = r_stval();
-      uint64 pa = (uint64)kalloc();
-      if(pa == 0){
-        p->killed = 1;
-      }
-      else if(va>= p->sz || va <= p->trapframe->sp){
-        p->killed = 1;
-      }else{
-        memset((void*)pa, 0, PGSIZE);
-        if(mappages(myproc()->pagetable, PGROUNDDOWN(va), 
-        PGSIZE, pa, PTE_W|PTE_X|PTE_R|PTE_U) != 0){
-          kfree((void*)pa);
-          p->killed = 1;
-        }
-      }
-      //创建一个新的页表;
   } 
+  else if(r_scause() == 13 || r_scause() == 15){
+    uint64 va = r_stval();
+      if (va < p->sz && va > PGROUNDDOWN(p->trapframe->sp)){
+      uint64 ka = (uint64) kalloc();
+          if (ka == 0) p->killed = -1; //分配内存失败
+          else
+          {
+            memset((void*)ka, 0, PGSIZE);
+              va = PGROUNDDOWN(va);
+              if (mappages(p->pagetable, va, PGSIZE, ka, PTE_U | PTE_W| PTE_R) != 0)
+              {
+                //映射失败
+                kfree((void*)ka);
+                p->killed = -1;
+              }
+          }
+      }
+      else p->killed = -1; 	//读入的虚拟地址比p->sz大，比用户栈小
+  }
   else {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());

@@ -99,29 +99,29 @@ walkaddr(pagetable_t pagetable, uint64 va)
 {
   pte_t *pte;
   uint64 pa;
+  struct proc *p=myproc();  // lab5-3
 
   if(va >= MAXVA)
     return 0;
 
   pte = walk(pagetable, va, 0);
-  // if(pte == 0)
-  //   return 0;
-  // if((*pte & PTE_V) == 0)
-  //   return 0;
-  if(pte == 0 || (*pte & PTE_V) == 0){
-    //没有分配内存，那么就重新分配；
-    struct proc *p = myproc();
-    if(va >= p->sz || va < p->trapframe->sp){
-      return 0;
-    }
-    pa = (uint64)kalloc();
-    if(pa == 0) return 0;
-    if(mappages(p->pagetable, va, PGSIZE, pa, PTE_W|PTE_X|PTE_R|PTE_U)
-      != 0){
-        kfree((void*)pa);
+  // lazy allocation - lab5-3
+  if(pte == 0 || (*pte & PTE_V) == 0) {
+    // va is on the user heap  
+    if(va >= PGROUNDUP(p->trapframe->sp) && va < p->sz){
+        char *pa;
+        if ((pa = kalloc()) == 0) {
+            return 0;
+        }
+        memset(pa, 0, PGSIZE);
+        if (mappages(p->pagetable, PGROUNDDOWN(va), PGSIZE,
+                     (uint64) pa, PTE_W | PTE_R | PTE_U) != 0) {
+            kfree(pa);
+            return 0;
+        }
+    } else {
         return 0;
-      }
-      return pa;
+    }
   }
   if((*pte & PTE_U) == 0)
     return 0;
@@ -129,7 +129,6 @@ walkaddr(pagetable_t pagetable, uint64 va)
   return pa;
 }
 
-// add a mapping to the kernel page table.
 // only used when booting.
 // does not flush TLB or enable paging.
 void
