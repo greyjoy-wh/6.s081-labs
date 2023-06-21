@@ -335,6 +335,39 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
   return -1;
 }
 
+int 
+cow_uvmcopy(pagetable_t old, pagetable_t new, uint64 sz){
+  pte_t *pte;
+  uint64 pa, i;
+
+  for(i = 0; i < sz; i += PGSIZE){
+    if((pte = walk(old, i, 0)) == 0)
+      panic("uvmcopy: pte should exist");
+    // if((*pte & PTE_V) == 0)
+    //   panic("uvmcopy: page not present");
+    *pte = (*pte) ^ PTE_W;
+    *pte = (*pte) | PTE_COW;
+    // pa = PTE2PA(*pte);
+    // flags = PTE_FLAGS(*pte);
+    
+    pte_t * new_pte = walk(new, i, 1);
+    *new_pte = *pte;
+    pa = PTE2PA(*pte);
+    addone(pa);
+    return 0;
+    // if((mem = kalloc()) == 0)
+    //   goto err;
+    // memmove(mem, (char*)pa, PGSIZE);
+    // if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){
+    //   kfree(mem);
+    //   goto err;
+    // }
+  }
+  return 0;
+
+}
+
+
 // mark a PTE invalid for user access.
 // used by exec for the user stack guard page.
 void
