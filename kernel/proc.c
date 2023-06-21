@@ -192,6 +192,7 @@ proc_freepagetable(pagetable_t pagetable, uint64 sz)
 {
   uvmunmap(pagetable, TRAMPOLINE, 1, 0);
   uvmunmap(pagetable, TRAPFRAME, 1, 0);
+  // printf("sz = %d\n", sz/4096);
   uvmfree(pagetable, sz);
 }
 
@@ -268,7 +269,7 @@ fork(void)
   }
 
   // Copy user memory from parent to child.
-  if(cow_uvmcopy(p->pagetable, np->pagetable, p->sz) < 0){
+  if(uvmcopy(p->pagetable, np->pagetable, p->sz) < 0){
     freeproc(np);
     release(&np->lock);
     return -1;

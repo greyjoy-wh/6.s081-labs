@@ -42,7 +42,6 @@ kinit()
 {
   initlock(&kmem.lock, "kmem");
   freerange(end, (void*)PHYSTOP);
-  memset(allpg, 0, sizeof(int) * ALLPGNUM);
 }
 
 void
@@ -93,8 +92,10 @@ kalloc(void)
     kmem.freelist = r->next;
   release(&kmem.lock);
 
-  if(r)
+  if(r){
     memset((char*)r, 5, PGSIZE); // fill with junk
-  allpg[GETPGNUM((uint64)r)] = 1;
+    allpg[GETPGNUM((uint64)r)] = 1;
+  }
+
   return (void*)r;
 }

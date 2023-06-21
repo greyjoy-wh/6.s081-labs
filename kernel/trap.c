@@ -87,11 +87,9 @@ usertrap(void)
       //读取发生pf的用户虚拟内存
       memmove((void*)((uint64)new_pa), (void*)old_pa, PGSIZE);//复制物理内存
       minerone(old_pa);
-      *old_pte = PA2PTE(new_pa) | PTE_FLAGS(*old_pte) | PTE_W;//将该pte指向新的物理地址。
+      *old_pte = PA2PTE(new_pa) | PTE_FLAGS(*old_pte) | PTE_W | PTE_V;//将该pte指向新的物理地址。
       *old_pte &= ~PTE_COW; //取消cow标记 //父进程不会有还是不可读啊 怎么修改父进程呢？ 
     }
-
-
   }else {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());

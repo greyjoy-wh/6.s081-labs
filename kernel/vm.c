@@ -3,6 +3,8 @@
 #include "memlayout.h"
 #include "elf.h"
 #include "riscv.h"
+#include "spinlock.h"
+#include "proc.h"
 #include "defs.h"
 #include "fs.h"
 
@@ -175,15 +177,19 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
 {
   uint64 a;
   pte_t *pte;
-
+  // struct proc* p = myproc();
+  // printf("%d\n", npages);
   if((va % PGSIZE) != 0)
     panic("uvmunmap: not aligned");
 
   for(a = va; a < va + npages*PGSIZE; a += PGSIZE){
     if((pte = walk(pagetable, a, 0)) == 0)
       panic("uvmunmap: walk");
-    if((*pte & PTE_V) == 0)
+    if((*pte & PTE_V) == 0){
+      printf("%p\n", *pte);
       panic("uvmunmap: not mapped");
+    }
+
     if(PTE_FLAGS(*pte) == PTE_V)
       panic("uvmunmap: not a leaf");
     if(do_free){
@@ -305,38 +311,38 @@ uvmfree(pagetable_t pagetable, uint64 sz)
 // physical memory.
 // returns 0 on success, -1 on failure.
 // frees any allocated pages on failure.
-int
-uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
-{
-  pte_t *pte;
-  uint64 pa, i;
-  uint flags;
-  char *mem;
+// int
+// uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
+// {
+//   pte_t *pte;
+//   uint64 pa, i;
+//   uint flags;
+//   char *mem;
 
-  for(i = 0; i < sz; i += PGSIZE){
-    if((pte = walk(old, i, 0)) == 0)
-      panic("uvmcopy: pte should exist");
-    if((*pte & PTE_V) == 0)
-      panic("uvmcopy: page not present");
-    pa = PTE2PA(*pte);
-    flags = PTE_FLAGS(*pte);
-    if((mem = kalloc()) == 0)
-      goto err;
-    memmove(mem, (char*)pa, PGSIZE);
-    if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){
-      kfree(mem);
-      goto err;
-    }
-  }
-  return 0;
+//   for(i = 0; i < sz; i += PGSIZE){
+//     if((pte = walk(old, i, 0)) == 0)
+//       panic("uvmcopy: pte should exist");
+//     if((*pte & PTE_V) == 0)
+//       panic("uvmcopy: page not present");
+//     pa = PTE2PA(*pte);
+//     flags = PTE_FLAGS(*pte);
+//     if((mem = kalloc()) == 0)
+//       goto err;
+//     memmove(mem, (char*)pa, PGSIZE);
+//     if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){
+//       kfree(mem);
+//       goto err;
+//     }
+//   }
+//   return 0;
 
- err:
-  uvmunmap(new, 0, i / PGSIZE, 1);
-  return -1;
-}
+//  err:
+//   uvmunmap(new, 0, i / PGSIZE, 1);
+//   return -1;
+// }
 
 int 
-cow_uvmcopy(pagetable_t old, pagetable_t new, uint64 sz){
+uvmcopy(pagetable_t old, pagetable_t new, uint64 sz){
   pte_t *pte;
   uint64 pa, i;
 
@@ -349,12 +355,14 @@ cow_uvmcopy(pagetable_t old, pagetable_t new, uint64 sz){
     *pte = (*pte) | PTE_COW;
     // pa = PTE2PA(*pte);
     // flags = PTE_FLAGS(*pte);
-    
-    pte_t * new_pte = walk(new, i, 1);
-    *new_pte = *pte;
     pa = PTE2PA(*pte);
+    if(mappages(new, i, PGSIZE, (uint64)pa, PTE_FLAGS(*pte)) != 0){
+      return -1;
+    }
+      // printf("pte =  %p\n", *pte);
+    // pte_t * new_pte = walk(new, i, 1);
+    // *new_pte = *pte;
     addone(pa);
-    return 0;
     // if((mem = kalloc()) == 0)
     //   goto err;
     // memmove(mem, (char*)pa, PGSIZE);
@@ -381,7 +389,7 @@ uvmclear(pagetable_t pagetable, uint64 va)
   *pte &= ~PTE_U;
 }
 
-// Copy from kernel to user.
+// Copy from kernel to user. 
 // Copy len bytes from src to virtual address dstva in a given page table.
 // Return 0 on success, -1 on error.
 int
@@ -389,14 +397,41 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 {
   uint64 n, va0, pa0;
 
+  struct proc *p = myproc();
+
   while(len > 0){
     va0 = PGROUNDDOWN(dstva);
+    //判断该虚拟地址有没有问题
+    if(va0 > MAXVA)
+      return -1;
+    pte_t* pte = walk(p->pagetable, va0, 0);
+    if(pte == 0) return -1;
+      
+    uint64 pa = PTE2PA(*pte);
+    if((((*pte) & (PTE_COW)) != 0) && getnum(pa) > 1){
+      //如果标志位上是cow 且对应的物理地址有多条的ref,那么就应该开辟新的物理地址。
+      char * new_pa;
+      if((new_pa = kalloc()) == 0){
+        return -1;
+      }
+      memmove(new_pa, (void*)pa, PGSIZE);
+      minerone(pa);
+      // pa0 = (uint64)new_pa;
+      *pte = PA2PTE(new_pa) | PTE_FLAGS(*pte) | PTE_W | PTE_V;
+      *pte &= ~PTE_COW;
+    }
     pa0 = walkaddr(pagetable, va0);
+    
+     //直接获得物理地址然后再进行修改
+                                    // 而不是通过虚拟地址
     if(pa0 == 0)
       return -1;
     n = PGSIZE - (dstva - va0);
     if(n > len)
       n = len;
+    pte = walk(pagetable, va0, 0);
+    if(pte == 0)
+      return -1;
     memmove((void *)(pa0 + (dstva - va0)), src, n);
 
     len -= n;
