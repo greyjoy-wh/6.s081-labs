@@ -29,7 +29,7 @@ struct {
 
   // Linked list of all buffers, through prev/next.
   // Sorted by how recently the buffer was used.
-  // head.next is most recent, head.prev is least.
+  // head.next is most recent, head.prev is least.//双向链表，且所有的buf又一个数组维护
   struct buf head;
 } bcache;
 
