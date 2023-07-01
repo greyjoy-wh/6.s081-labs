@@ -8,6 +8,8 @@
 #define NBUCKET 5
 #define NKEYS 100000
 
+pthread_mutex_t big_lock[NBUCKET];
+
 struct entry {
   int key;
   int value;
@@ -25,6 +27,7 @@ now()
  return tv.tv_sec + tv.tv_usec / 1000000.0;
 }
 
+//p指向的的数据堆的开始第一个，这里的插入就是将entry插入到开头
 static void 
 insert(int key, int value, struct entry **p, struct entry *n)
 {
@@ -33,6 +36,7 @@ insert(int key, int value, struct entry **p, struct entry *n)
   e->value = value;
   e->next = n;
   *p = e;
+
 }
 
 static 
@@ -42,6 +46,7 @@ void put(int key, int value)
 
   // is the key already present?
   struct entry *e = 0;
+  pthread_mutex_lock(&big_lock[i]);
   for (e = table[i]; e != 0; e = e->next) {
     if (e->key == key)
       break;
@@ -53,30 +58,30 @@ void put(int key, int value)
     // the new is new.
     insert(key, value, &table[i], table[i]);
   }
+  pthread_mutex_unlock(&big_lock[i]);
 }
 
 static struct entry*
 get(int key)
 {
   int i = key % NBUCKET;
-
-
   struct entry *e = 0;
+  pthread_mutex_lock(&big_lock[i]);
   for (e = table[i]; e != 0; e = e->next) {
     if (e->key == key) break;
   }
-
+  pthread_mutex_unlock(&big_lock[i]);
   return e;
 }
 
 static void *
 put_thread(void *xa)
 {
-  int n = (int) (long) xa; // thread number
+  int n = (int) (long) xa; // thread number 线程号码
   int b = NKEYS/nthread;
 
   for (int i = 0; i < b; i++) {
-    put(keys[b*n + i], n);
+    put(keys[b*n + i], n); //吧属于这个线程段区域的数字组合放进去。
   }
 
   return NULL;
@@ -102,7 +107,9 @@ main(int argc, char *argv[])
   pthread_t *tha;
   void *value;
   double t1, t0;
-
+  for(int i = 0; i < NBUCKET; i++){
+    pthread_mutex_init(&big_lock[i], NULL);
+  }
   if (argc < 2) {
     fprintf(stderr, "Usage: %s nthreads\n", argv[0]);
     exit(-1);
