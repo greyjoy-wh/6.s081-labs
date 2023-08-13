@@ -484,3 +484,90 @@ sys_pipe(void)
   }
   return 0;
 }
+
+//遍历找一个没用过的vma
+ static int mapalloc()
+ {
+   struct proc *p = myproc();
+   for(int i = 0; i < 16; i ++)
+   {
+     if(p->vmas[i].used == 0)
+     {
+       p->vmas[i].used = 1;
+       return i;
+     }
+   }
+   return -1;
+ }
+
+
+uint64 sys_mmap(void){
+    uint64 addr;
+    int length;
+    int prot, flags, fd, off;
+    struct file* f; //全部的传入参数
+    uint64 error = 0xffffffffffffffff;
+    //拿到所有的参数
+    if(argaddr(0, &addr) < 0 || argint(1, &length) < 0)
+      return error;
+    if(argint(2, &prot) < 0 || argint(3, &flags) < 0)
+      return error;
+    if(argfd(4, &fd, &f) < 0 || argint(5, &off) < 0)
+      return error;
+    if(!f->writable && (prot & PROT_WRITE) && (flags == MAP_SHARED))
+      return error;
+
+    struct proc *p = myproc();
+    int idx = mapalloc();//找到一个空闲的
+    if(idx == -1)
+      return error; //满了就另说
+    p->vmas[idx].file = f;
+    p->vmas[idx].flags = flags;
+    p->vmas[idx].offset = off;  
+    p->vmas[idx].prot = prot;
+    p->vmas[idx].length = length;
+    p->vmas[idx].st =  PGROUNDUP(p->sz);
+    p->vmas[idx].st =  PGROUNDUP(p->sz) + PGROUNDUP(length);
+    p->sz = PGROUNDUP(length) + PGROUNDUP(p->sz);
+    filedup(f);
+    return p->vmas[idx].st;
+
+}
+
+ uint64 sys_munmap(void)
+ {
+   uint64 addr;
+   int length;
+   if(argaddr(0, &addr) < 0 || argint(1, &length) < 0)
+     return -1;
+   struct proc* p = myproc();
+   
+   // 查找解除映射的映射区，返回对应vma结构体的索引
+   int idx = findvma(addr);
+   // 查找失败
+   if(idx < 0)
+     return -1;
+   // 如果映射区为MAP_SHARED，那么取消映射时，需要将修改的数据写回文件
+   if(p->vmas[idx].flags & MAP_SHARED)
+     filewrite(p->vmas[idx].file, addr, length);
+   // 取消映射
+   uvmunmap(p->pagetable, addr, PGROUNDUP(length) / PGSIZE, 1);
+   // p->vmas[idx].st == addr的取消映射情况，即方式②
+   // 取消映射之后，需要将映射区的起始地址向上移动
+   // p->vmas[idx].st += PGROUNDUP(length)
+   // 测试用例中length都是4K(一页)的整数倍
+   // 这样处理的原因便于exit()取消映射时操作
+   if(addr == p->vmas[idx].st)
+     p->vmas[idx].st += PGROUNDUP(length);
+   
+   // 取消映射之后，映射区长度减少
+   p->vmas[idx].length -= length;
+   // 如果映射区长度为0，没有了映射区，文件引用计数减1，清空对应的vmas结构体
+   if(p->vmas[idx].length == 0)
+   {
+     fileclose(p->vmas[idx].file);
+     memset((void*)&p->vmas[idx], 0, sizeof(p->vmas[idx]));
+   }
+   
+   return 0;
+ }

@@ -82,6 +82,20 @@ struct trapframe {
 
 enum procstate { UNUSED, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
 
+//映射区域的结构体
+struct vma {
+  int used; //是否被使用
+  uint64 st; //开始地址
+  uint64 ed;  //结束地址 都是对齐的
+  int length; //长度
+  int prot;   // 有关于文件的可读可写 可执行
+  uint flags; //结束映射后是否要写入脏页
+  int offset; //file的offset 但是默认都是0
+  struct file* file;
+};
+
+
+
 // Per-process state
 struct proc {
   struct spinlock lock;
@@ -93,7 +107,7 @@ struct proc {
   int killed;                  // If non-zero, have been killed
   int xstate;                  // Exit status to be returned to parent's wait
   int pid;                     // Process ID
-
+  
   // these are private to the process, so p->lock need not be held.
   uint64 kstack;               // Virtual address of kernel stack
   uint64 sz;                   // Size of process memory (bytes)
@@ -103,4 +117,5 @@ struct proc {
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
+  struct vma vmas[16];
 };

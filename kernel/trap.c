@@ -5,6 +5,10 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
+#include "fs.h"
+#include "sleeplock.h"
+#include "file.h"
+#include "fcntl.h"
 
 struct spinlock tickslock;
 uint ticks;
@@ -29,6 +33,44 @@ trapinithart(void)
   w_stvec((uint64)kernelvec);
 }
 
+ int findvma(uint64 va)
+ {
+   struct proc* p = myproc();
+   for(int i = 0; i < 16; i ++)
+   {
+     uint64 st = p->vmas[i].st, ed = p->vmas[i].ed;
+     if(st <= va && va < ed)
+       return i;
+   }
+   return -1;
+ }
+
+
+
+uint64 mmapalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz, int prot)
+ {
+     if(newsz < oldsz)
+       return oldsz;
+     for(uint64 a = oldsz; a < newsz; a += PGSIZE)
+     {
+       char* mem = (char*)kalloc();
+       if(mem == 0)
+       {
+         uvmdealloc(pagetable, a, oldsz);
+         return 0;
+       }
+       memset(mem, 0, PGSIZE);
+       
+       if(mappages(pagetable, a, PGSIZE, (uint64)mem, prot) != 0)
+       {
+           kfree((void*)mem);
+           uvmdealloc(pagetable, a, oldsz);
+           return 0;
+       }
+     }
+     //uvmalloc();
+     return newsz;   
+ }
 //
 // handle an interrupt, exception, or system call from user space.
 // called from trampoline.S
@@ -67,7 +109,48 @@ usertrap(void)
     syscall();
   } else if((which_dev = devintr()) != 0){
     // ok
-  } else {
+  } else if(r_scause() == 13 || r_scause() == 15) {
+    uint64 va = r_stval();
+     
+     int idx = findvma(va);
+     if(idx >= 0)
+     {
+       // 设置映射区page的权限
+       int perms = PTE_U;
+       int prot = p->vmas[idx].prot;
+       if(prot & PROT_READ) 
+         perms |= PTE_R;
+       if(prot & PROT_WRITE)
+         perms |= PTE_W;
+       if(prot & PROT_EXEC)
+         perms |= PTE_X;
+       uint64 st = p->vmas[idx].st, ed = p->vmas[idx].ed;
+     
+       // 映射区可能需要多个物理，所以分配多个物理页。
+       // 分配之后虚拟地址与物理地址之间建立映射关系。
+       if((ed = mmapalloc(p->pagetable, st, ed, perms)) == 0)
+         printf("allocate error");
+       
+       struct file *mfile = p->vmas[idx].file;
+       
+       // 将文件数据读入到物理页，但是读取时需要持有锁。
+       // 不允许其他的进程向当前正在读取的文件进行写操作。
+       ilock(mfile->ip);
+       readi(mfile->ip, 1, p->vmas[idx].st, 0, p->vmas[idx].length);
+       iunlock(mfile->ip);
+     }
+     else
+       p->killed = 1;
+
+
+
+
+
+  }
+  
+  
+  
+  else {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
     p->killed = 1;

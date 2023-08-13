@@ -5,6 +5,7 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
+#include "fcntl.h"
 
 struct cpu cpus[NCPU];
 
@@ -275,14 +276,13 @@ fork(void)
   }
 
   // Copy user memory from parent to child.
-  if(uvmcopy(p->pagetable, np->pagetable, p->sz) < 0){
+  if(mmapcopy(p->pagetable, np->pagetable, p->sz) < 0){
     freeproc(np);
     release(&np->lock);
     return -1;
   }
   np->sz = p->sz;
 
-  np->parent = p;
 
   // copy saved user registers.
   *(np->trapframe) = *(p->trapframe);
@@ -299,6 +299,20 @@ fork(void)
   safestrcpy(np->name, p->name, sizeof(p->name));
 
   pid = np->pid;
+
+
+   release(&np->lock);
+   np->parent = p;
+   acquire(&np->lock);
+   for(int i = 0; i < 16; i ++)
+   {
+     // 复制父进程的vmas的内容
+     memmove((void*)&np->vmas[i], (void*)&p->vmas[i], sizeof(p->vmas[i]));
+     // 增加引用计数
+     if(p->vmas[i].used == 1)
+       filedup(p->vmas[i].file);
+   }
+
 
   np->state = RUNNABLE;
 
@@ -333,6 +347,8 @@ reparent(struct proc *p)
   }
 }
 
+
+
 // Exit the current process.  Does not return.
 // An exited process remains in the zombie state
 // until its parent calls wait().
@@ -352,6 +368,20 @@ exit(int status)
       p->ofile[fd] = 0;
     }
   }
+
+for(int i = 0; i > 16; i ++)
+{
+  if(p->vmas[i].used == 1)
+  {
+    uint64 length = p->vmas[i].length;
+    // 减少文件引用计数
+    fileclose(p->vmas[i].file);
+    // 取消映射
+    mmapunmap(p->pagetable, p->vmas[i].st, PGROUNDUP(length) / PGSIZE, 1);
+    // 清空vma
+    memset((void*)&p->vmas[i], 0, sizeof(p->vmas[i]));
+  }
+}
 
   begin_op();
   iput(p->cwd);

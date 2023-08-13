@@ -146,7 +146,7 @@ void            trapinit(void);
 void            trapinithart(void);
 extern struct spinlock tickslock;
 void            usertrapret(void);
-
+int             findvma(uint64);
 // uart.c
 void            uartinit(void);
 void            uartintr(void);
@@ -171,6 +171,8 @@ uint64          walkaddr(pagetable_t, uint64);
 int             copyout(pagetable_t, uint64, char *, uint64);
 int             copyin(pagetable_t, char *, uint64, uint64);
 int             copyinstr(pagetable_t, char *, uint64, uint64);
+int             mmapcopy(pagetable_t old, pagetable_t new, uint64 sz);
+void            mmapunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free);
 
 // plic.c
 void            plicinit(void);
